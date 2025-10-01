@@ -6,6 +6,14 @@ from tqdm import tqdm
 from models import BoundaryModel
 from integration import Integration
 
+## ---- BOUNDARY CONDITION ---- ##
+
+NN = BoundaryModel()
+
+optimizer = torch.optim.Adam(NN.parameters(), lr=1e-1)
+
+### ---- LOSS PARAMETERS ---- ####
+
 EPSILON = 2e-2
 
 
@@ -14,27 +22,18 @@ def f(x: torch.Tensor) -> torch.Tensor:
     return (1 - torch.exp(-x / EPSILON)) * (1 - x)
 
 
-class BoundaryConstrain(torch.nn.Module):
-    """Class to strongly apply bc"""
-
-    def forward(self, inputs):
-        """Boundary condition modifier function."""
-        return inputs * (inputs - 1)
-
-
-NN = BoundaryModel(nb_points=3)
-
-integral_rule = Integration(a=0, b=1, nb_points=15, integration_order=2)
-
-EPOCHS = 100
-
-optimizer = torch.optim.Adam(NN.parameters(), lr=1e-1)
-
-
 def loss_function(points: torch.Tensor) -> torch.Tensor:
     """Loss function to minimize."""
     return (NN(points) - f(points)) ** 2
 
+
+integral_rule = Integration(
+    intervals_start=0, interval_end=1, nb_intervals=15, integration_order=2
+)
+
+### ---- TRAINING PARAMETERS ---- ####
+
+EPOCHS = 100
 
 training_bar = tqdm(range(EPOCHS))
 
@@ -44,6 +43,8 @@ best_loss = float("inf")
 MIN_DELTA = 1e-16
 EARLY_STOPPING_PATIENCE = 5
 EARLY_STOPPING_COUNTER = 0
+
+### ---- TRAINING PHASE ---- ####
 
 for _ in training_bar:
     optimizer.zero_grad()
@@ -69,21 +70,36 @@ for _ in training_bar:
 
     training_history.append(loss_value_float)
 
+### ---- PLOTTING ---- ####
 
 plot_points = torch.linspace(0, 1, 1000).unsqueeze(1)
+plot_points_np = plot_points.numpy(force=True)
+
 
 fig_solution, ax_solution = plt.subplots()
 
 ax_solution.plot(
-    plot_points.numpy(), f(plot_points).detach().numpy(), label="Exact function"
+    plot_points_np, f(plot_points).numpy(force=True), label="Exact function"
 )
 ax_solution.plot(
-    plot_points.numpy(), NN(plot_points).detach().numpy(), label="NN approximation"
+    plot_points_np,
+    NN(plot_points).numpy(force=True),
+    linestyle=":",
+    label="NN approximation",
 )
-fig_solution.legend()
+ax_solution.set_title("Approximation of the boundary condition")
+ax_solution.set_xlabel("x")
+ax_solution.set_ylabel("f(x)")
+ax_solution.set_xlim(-0.01, 1.01)
+ax_solution.set_ylim(-0.01, 1.01)
+ax_solution.legend()
 
 fig_loss, ax_loss = plt.subplots()
 
 ax_loss.semilogy(training_history)
+ax_loss.set_title("Training History")
+ax_loss.set_xlabel("Epochs")
+ax_loss.set_ylabel("Loss Value")
+
 
 plt.show()
