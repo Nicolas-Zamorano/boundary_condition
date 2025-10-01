@@ -69,7 +69,7 @@ def loss_function(
 
 
 integral_rule = Integration(
-    intervals_start=0, interval_end=1, nb_intervals=100, integration_order=2
+    intervals_start=0, interval_end=1, nb_intervals=15, integration_order=2
 )
 
 ### ---- TRAINING PARAMETERS ---- ####
@@ -209,10 +209,10 @@ fig.text(
 fig.text(0.5, 0.48, "Trainable Boundary Layer", ha="center", va="center", fontsize=14)
 
 # Loss plot
-# fig_loss, ax_loss = plt.subplots()
-# ax_loss.semilogy(history_loss_boundary_NN, label="Strong Loss")
-# ax_loss.semilogy(history_loss_boundary_layer, label="Weak Loss")
-# ax_loss.legend()
-# ax_loss.set_title("Training Losses")
+fig_loss, ax_loss = plt.subplots()
+ax_loss.semilogy(history_loss_boundary_NN, label="Strong Loss")
+ax_loss.semilogy(history_loss_boundary_layer, label="Weak Loss")
+ax_loss.legend()
+ax_loss.set_title("Training Losses")
 
 plt.show()

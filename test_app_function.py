@@ -18,11 +18,13 @@ fig, ax = plt.subplots()
 
 line_styles = ["-", "--", "-.", ":"]
 
+scaling = [1, 2, 3, 4]
+
 for e in zip(e_0, e_1, e_2):
 
     model.layer.weight.data = torch.tensor([e])
 
-    values = model(points).detach().squeeze().numpy()
+    values = scaling.pop(0) * model(points).detach().squeeze().numpy()
 
     ax.plot(points, values, label=f"{np.round(e,2)}", linestyle=line_styles.pop(0))
 
