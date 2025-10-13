@@ -1,6 +1,6 @@
 """Module for Neural Networks"""
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import torch
 
 
@@ -27,6 +27,46 @@ class BoundaryModel(torch.nn.Module):
         weights = self.activation(self.layer.weight)
 
         return self.function_approx(x, weights)
+
+
+class C2BoundaryModel(torch.nn.Module):
+    """NN to approximate boundary condition"""
+
+    def __init__(self):
+        super(C2BoundaryModel, self).__init__()
+        self.layer = torch.nn.Linear(3, 1, bias=False)
+        self.layer.weight.data.fill_(1 / 3)
+        self.activation = torch.nn.Softmax(dim=-1)
+
+    def function(self, x: torch.Tensor) -> torch.Tensor:
+        """function"""
+        value = torch.zeros_like(x)
+        sign = torch.sign(x) > 0
+
+        value[sign] = torch.exp(-1 / x[sign])
+
+        return value
+        # return torch.where(x > 0, torch.exp(-1 / x), torch.tensor(0.0))
+
+    def s(self, x: torch.Tensor) -> torch.Tensor:
+        """C^2 activation function"""
+        return self.function(x) / (self.function(x) + self.function(1 - x))
+
+    def g_a(self, x: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
+        """C^2 activation function with desired boundary decay determined by a"""
+        return torch.where(
+            x < a / 3, 1.5 / a * x, self.s((x + (a / 3)) / ((4 / 3) * a))
+        )
+
+    def g(self, x: torch.Tensor, epsilons: torch.Tensor) -> torch.Tensor:
+        """boundary constrain"""
+        return self.g_a(x, epsilons[:, 0]) + self.g_a(1 - x, epsilons[:, 2]) - 1
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass"""
+        weights = self.activation(self.layer.weight)
+
+        return self.g(x, weights)
 
 
 class IdentityBC(torch.nn.Module):
