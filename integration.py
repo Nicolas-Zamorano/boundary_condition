@@ -24,7 +24,7 @@ class Integration:
             intervals_start, interval_end, nb_intervals + 1
         ).reshape(-1, 1, 1)
 
-        self._integration_points, self._weights = self._compute_integral_values(
+        self.integration_points, self._weights = self._compute_integral_values(
             self.intervals_points, self._integration_order
         )
 
