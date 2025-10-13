@@ -1,14 +1,17 @@
 """Example of approximating the boundary condition of a function using a NN."""
 
-import torch
+import os
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import matplotlib.pyplot as plt
+import torch
 from tqdm import tqdm
-from src import (
-    FeedForwardNeuralNetwork as FNN,
-    C0BoundaryModel,
-    C2BoundaryModel,
-    Integration,
-)
+
+from src import C0BoundaryModel, C2BoundaryModel
+from src import FeedForwardNeuralNetwork as FNN
+from src import Integration
 
 torch.set_default_dtype(torch.float64)
 

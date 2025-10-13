@@ -1,11 +1,17 @@
 """test to see different weights for the boundary approximation function"""
 
-import torch
+import os
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import matplotlib.pyplot as plt
+import torch
 import numpy as np
+
 from src import C0BoundaryModel
 
-model = C0BoundaryModel(nb_points=3)
+model = C0BoundaryModel()
 
 
 e_0 = [1 / 3, 1 / 6, 5 / 7, 1 / 8]
