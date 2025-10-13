@@ -1,6 +1,6 @@
 """Module for Neural Networks"""
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import torch
 
 
@@ -27,6 +27,46 @@ class BoundaryModel(torch.nn.Module):
         weights = self.activation(self.layer.weight)
 
         return self.function_approx(x, weights)
+
+
+class C2BoundaryModel(torch.nn.Module):
+    """NN to approximate boundary condition"""
+
+    def __init__(self):
+        super(C2BoundaryModel, self).__init__()
+        self.layer = torch.nn.Linear(3, 1, bias=False)
+        self.layer.weight.data.fill_(1 / 3)
+        self.activation = torch.nn.Softmax(dim=-1)
+
+    def function(self, x: torch.Tensor) -> torch.Tensor:
+        """function"""
+        value = torch.zeros_like(x)
+        sign = torch.sign(x) > 0
+
+        value[sign] = torch.exp(-1 / x[sign])
+
+        return value
+        # return torch.where(x > 0, torch.exp(-1 / x), torch.tensor(0.0))
+
+    def s(self, x: torch.Tensor) -> torch.Tensor:
+        """C^2 activation function"""
+        return self.function(x) / (self.function(x) + self.function(1 - x))
+
+    def g_a(self, x: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
+        """C^2 activation function with desired boundary decay determined by a"""
+        return torch.where(
+            x < a / 3, 1.5 / a * x, self.s((x + (a / 3)) / ((4 / 3) * a))
+        )
+
+    def g(self, x: torch.Tensor, epsilons: torch.Tensor) -> torch.Tensor:
+        """boundary constrain"""
+        return self.g_a(x, epsilons[:, 0]) + self.g_a(1 - x, epsilons[:, 2]) - 1
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass"""
+        weights = self.activation(self.layer.weight)
+
+        return self.g(x, weights)
 
 
 class IdentityBC(torch.nn.Module):
@@ -107,7 +147,9 @@ class FeedForwardNeuralNetwork(torch.nn.Module):
         return self._neural_network(x) * self._boundary_condition_modifier(x)
 
     # @torch.jit.export
-    def gradient(self, inputs: torch.Tensor) -> Optional[torch.Tensor]:
+    def value_and_gradient(
+        self, inputs: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute the gradient of the neural network with respect to its inputs."""
         inputs.requires_grad_(True)
         output = self.forward(inputs)
@@ -122,36 +164,46 @@ class FeedForwardNeuralNetwork(torch.nn.Module):
             create_graph=True,
         )[0]
 
-        return gradients
+        assert gradients is not None
+
+        return output, gradients
 
     # @torch.jit.export
-    def laplacian(self, inputs: torch.Tensor) -> torch.Tensor:
+    def value_and_laplacian(
+        self, inputs: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute the laplacian of the neural network with respect to its inputs."""
         inputs.requires_grad_(True)
         output = self.forward(inputs)
 
         grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(output)]
 
-        gradients = torch.autograd.grad(
+        gradients: Optional[torch.Tensor] = torch.autograd.grad(
             outputs=[output],
             inputs=[inputs],
-            grad_outputs=grad_outputs,
+            grad_outputs=grad_outputs,  # type: ignore
             retain_graph=True,
             create_graph=True,
         )[0]
 
+        assert gradients is not None
+
         laplacian = torch.zeros_like(output)
 
-        for i in range(inputs.size(-1)):
-            gradient = gradients.index_select(-1, torch.tensor([i]))
-            grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(gradient)]
+        for i in range(inputs.shape[-1]):
+
+            gradient: torch.Tensor = gradients[..., i]
+            gradient_outputs: List[Optional[torch.Tensor]] = [
+                torch.ones_like(output).squeeze(-1)
+            ]
             grad2 = torch.autograd.grad(
                 [gradient],
                 [inputs],
-                grad_outputs=grad_outputs,
+                grad_outputs=gradient_outputs,  # type: ignore
                 create_graph=True,
                 retain_graph=True,
-            )[0][..., i : i + 1]
-            laplacian += grad2
+            )[0]
+            assert grad2 is not None
+            laplacian += grad2[..., i : i + 1]
 
-        return laplacian
+        return output, gradients, laplacian

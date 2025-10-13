@@ -24,7 +24,7 @@ class Integration:
             intervals_start, interval_end, nb_intervals + 1
         ).reshape(-1, 1, 1)
 
-        self._integration_points, self._weights = self._compute_integral_values(
+        self.integration_points, self._weights = self._compute_integral_values(
             self.intervals_points, self._integration_order
         )
 
@@ -59,6 +59,6 @@ class Integration:
         **kwargs: Any | None
     ) -> torch.Tensor:
         """Compute the integral of a function."""
-        function_values = function(self._integration_points, *args, **kwargs)
+        function_values = function(self.integration_points, *args, **kwargs)
         integral = torch.sum(function_values * self._weights, dim=-2)
         return integral

@@ -6,52 +6,59 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-plot_points = torch.linspace(0, 1, 1000)
+plot_points = torch.linspace(0, 1, 1000, requires_grad=True)
 
 
 def function(x: torch.Tensor) -> torch.Tensor:
     """function"""
-    value = torch.zeros_like(x)
-    sign = torch.sign(x) > 0
-
-    value[sign] = torch.exp(-1 / x[sign])
-
-    return value
+    return torch.where(x > 0, torch.exp(-1 / x), torch.tensor(0.0))
 
 
 def s(x: torch.Tensor) -> torch.Tensor:
     """C^2 activation function"""
-    value = function(x)
-
-    return value / (value + function(1 - x))
+    return function(x) / (function(x) + function(1 - x))
 
 
 def g_a(x: torch.Tensor, a: float) -> torch.Tensor:
     """C^2 activation function with desired boundary decay determined by a"""
-    zeros = torch.zeros_like(x)
-    sign = torch.sign((a / 3) - x)
-    max_value_0 = torch.maximum(zeros, sign)
-    max_value_1 = torch.maximum(zeros, -sign)
-
-    value = 1.5 * a * max_value_0 + s((x + (a / 3)) / ((4 / 3) * a)) * max_value_1
-
-    return value
+    return torch.where(x < a / 3, 1.5 / a * x, s((x + (a / 3)) / ((4 / 3) * a)))
 
 
 def g(x: torch.Tensor, epsilons: Tuple[float, float, float]) -> torch.Tensor:
     """boundary constrain"""
-    epsilon_0, epsilon_1, _ = epsilons
-
-    return g_a(x, epsilon_0) + g_a(1 - x, epsilon_0 + epsilon_1) - 1
+    return g_a(x, epsilons[0]) + g_a(1 - x, epsilons[2]) - 1
 
 
 fig_1, ax_1 = plt.subplots()
 
-ax_1.plot(plot_points, function(plot_points), label="f(x)")
-ax_1.plot(plot_points, s(plot_points), label="S(x)")
+function_value = function(plot_points)
+function_jab = torch.autograd.grad(
+    function_value, plot_points, torch.ones_like(function_value), create_graph=True
+)[0]
+function_hessian = torch.autograd.grad(
+    function_jab, plot_points, torch.ones_like(function_value)
+)[0]
+
+s_value = s(plot_points)
+s_jab = torch.autograd.grad(
+    s_value, plot_points, torch.ones_like(s_value), create_graph=True
+)[0]
+s_hessian = torch.autograd.grad(s_jab, plot_points, torch.ones_like(s_value))[0]
+
+ax_1.plot(plot_points.numpy(force=True), function_value.numpy(force=True), label="f(x)")
+ax_1.plot(plot_points.numpy(force=True), function_jab.numpy(force=True), label="f'(x)")
+ax_1.plot(
+    plot_points.numpy(force=True), function_hessian.numpy(force=True), label="f''(x)"
+)
+ax_1.plot(plot_points.numpy(force=True), s_value.numpy(force=True), label="S(x)")
+ax_1.plot(plot_points.numpy(force=True), s_jab.numpy(force=True), label="S'(x)")
+ax_1.plot(plot_points.numpy(force=True), s_hessian.numpy(force=True), label="S''(x)")
+
 ax_1.legend()
 
-a_values = [0.25, 0.5, 0.75]
+plt.show()
+
+a_values = [0.33, 0.5, 0.75]
 
 fig_2, ax_2 = plt.subplots()
 
