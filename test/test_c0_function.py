@@ -3,9 +3,9 @@
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
-from models import BoundaryModel
+from src import C0BoundaryModel
 
-model = BoundaryModel(nb_points=3)
+model = C0BoundaryModel(nb_points=3)
 
 
 e_0 = [1 / 3, 1 / 6, 5 / 7, 1 / 8]

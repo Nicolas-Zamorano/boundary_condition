@@ -4,13 +4,13 @@ from typing import List, Optional, Tuple
 import torch
 
 
-class BoundaryModel(torch.nn.Module):
+class C0BoundaryModel(torch.nn.Module):
     """NN to approximate the boundary condition."""
 
-    def __init__(self, nb_points: int = 3):
-        super(BoundaryModel, self).__init__()
-        self.layer = torch.nn.Linear(nb_points, 1, bias=False)
-        self.layer.weight.data.fill_(1.0 / nb_points)
+    def __init__(self):
+        super(C0BoundaryModel, self).__init__()
+        self.layer = torch.nn.Linear(3, 1, bias=False)
+        self.layer.weight.data.fill_(1.0 / 3)
         self.activation = torch.nn.Softmax(dim=-1)
 
     def function_approx(self, x: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:

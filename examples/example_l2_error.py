@@ -3,8 +3,12 @@
 import torch
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from models import BoundaryModel, FeedForwardNeuralNetwork as FNN
-from integration import Integration
+from src import (
+    FeedForwardNeuralNetwork as FNN,
+    C0BoundaryModel,
+    C2BoundaryModel,
+    Integration,
+)
 
 torch.set_default_dtype(torch.float64)
 
@@ -19,7 +23,7 @@ class BoundaryLayer(torch.nn.Module):
         return inputs * (1 - inputs)
 
 
-boundary_NN = BoundaryModel()
+boundary_NN = C0BoundaryModel()
 
 boundary_layer = BoundaryLayer()
 

@@ -3,37 +3,46 @@
 import torch
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from models import BoundaryModel
-from integration import Integration
+from src import (
+    FeedForwardNeuralNetwork as FNN,
+    C0BoundaryModel,
+    C2BoundaryModel,
+    Integration,
+)
+
+torch.autograd.set_detect_anomaly(True)
+torch.set_default_dtype(torch.float64)
 
 ## ---- BOUNDARY CONDITION ---- ##
 
-NN = BoundaryModel()
+# NN = C0BoundaryModel()
+NN = C2BoundaryModel()
 
 optimizer = torch.optim.Adam(NN.parameters(), lr=1e-1)
 
 ### ---- LOSS PARAMETERS ---- ####
 
 EPSILON = 2e-2
+SCALING_FACTOR = 1.1
 
 
 def f(x: torch.Tensor) -> torch.Tensor:
     """Function to approximate his boundary condition."""
-    return (1 - torch.exp(-x / EPSILON)) * (1 - x)
+    return SCALING_FACTOR * (1 - torch.exp(-x / EPSILON)) * (1 - x)
 
 
-def loss_function(points: torch.Tensor) -> torch.Tensor:
+def loss_function(points: torch.Tensor, value_f: torch.Tensor) -> torch.Tensor:
     """Loss function to minimize."""
-    return (NN(points) - f(points)) ** 2
+    return (NN(points) - value_f) ** 2
 
 
 integral_rule = Integration(
-    intervals_start=0, interval_end=1, nb_intervals=15, integration_order=2
+    intervals_start=0.5, interval_end=1, nb_intervals=100, integration_order=2
 )
 
 ### ---- TRAINING PARAMETERS ---- ####
 
-EPOCHS = 100
+EPOCHS = 15000
 
 training_bar = tqdm(range(EPOCHS))
 
@@ -44,12 +53,14 @@ MIN_DELTA = 1e-16
 EARLY_STOPPING_PATIENCE = 5
 EARLY_STOPPING_COUNTER = 0
 
+f_value = f(integral_rule.integration_points)
+
 ### ---- TRAINING PHASE ---- ####
 
 for _ in training_bar:
     optimizer.zero_grad()
 
-    loss = torch.sum(torch.sqrt(integral_rule.integrate(loss_function))) ** 2
+    loss = torch.sum(torch.sqrt(integral_rule.integrate(loss_function, f_value))) ** 2
 
     loss_value_float = loss.item()
 
@@ -66,7 +77,7 @@ for _ in training_bar:
 
     optimizer.step()
 
-    training_bar.set_description(f"Loss: {loss_value_float:.4e}")
+    training_bar.set_description(f"Loss: {loss_value_float:.8e}")
 
     training_history.append(loss_value_float)
 

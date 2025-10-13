@@ -3,8 +3,12 @@
 import torch
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from models import C2BoundaryModel, FeedForwardNeuralNetwork as FNN
-from integration import Integration
+from src import (
+    FeedForwardNeuralNetwork as FNN,
+    C0BoundaryModel,
+    C2BoundaryModel,
+    Integration,
+)
 
 torch.set_default_dtype(torch.float64)
 
@@ -51,7 +55,7 @@ optimizer_boundary_NN = torch.optim.Adam(list(NN_boundary_NN.parameters()), lr=1
 
 ### ---- LOSS PARAMETERS ---- ####
 
-EPSILON = 1
+EPSILON = 1e-2
 SCALING_FACTOR = 1.1
 
 
