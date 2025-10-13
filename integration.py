@@ -59,6 +59,6 @@ class Integration:
         **kwargs: Any | None
     ) -> torch.Tensor:
         """Compute the integral of a function."""
-        function_values = function(self._integration_points, *args, **kwargs)
+        function_values = function(self.integration_points, *args, **kwargs)
         integral = torch.sum(function_values * self._weights, dim=-2)
         return integral
