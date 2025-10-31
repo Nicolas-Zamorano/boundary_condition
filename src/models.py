@@ -1,6 +1,6 @@
 """Module for Neural Networks"""
 
-from typing import List, Optional, Tuple
+from typing import List, Optional
 import torch
 
 
@@ -9,9 +9,9 @@ class C0BoundaryModel(torch.nn.Module):
 
     def __init__(self):
         super(C0BoundaryModel, self).__init__()
-        self.layer = torch.nn.Linear(3, 1, bias=False)
-        self.layer.weight.data.fill_(1.0 / 3)
-        self.activation = torch.nn.Softmax(dim=-1)
+        self.epsilons = torch.nn.Parameter(
+            torch.tensor([1 / 3, 1 / 3, 1 / 3], dtype=torch.float64)
+        )
 
     def function_approx(self, x: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
         """Approximation function."""
@@ -24,7 +24,7 @@ class C0BoundaryModel(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass"""
-        weights = self.activation(self.layer.weight)
+        weights = torch.softmax(self.epsilons, dim=-1)
 
         return self.function_approx(x, weights)
 
@@ -34,9 +34,9 @@ class C2BoundaryModel(torch.nn.Module):
 
     def __init__(self):
         super(C2BoundaryModel, self).__init__()
-        self.layer = torch.nn.Linear(3, 1, bias=False)
-        self.layer.weight.data.fill_(1 / 3)
-        self.activation = torch.nn.Softmax(dim=-1)
+        self.epsilons = torch.nn.Parameter(
+            torch.tensor([1 / 3, 1 / 3, 1 / 3], dtype=torch.float64)
+        )
 
     def function(self, x: torch.Tensor) -> torch.Tensor:
         """function"""
@@ -46,7 +46,6 @@ class C2BoundaryModel(torch.nn.Module):
         value[sign] = torch.exp(-1 / x[sign])
 
         return value
-        # return torch.where(x > 0, torch.exp(-1 / x), torch.tensor(0.0))
 
     def s(self, x: torch.Tensor) -> torch.Tensor:
         """C^2 activation function"""
@@ -54,17 +53,19 @@ class C2BoundaryModel(torch.nn.Module):
 
     def g_a(self, x: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
         """C^2 activation function with desired boundary decay determined by a"""
-        return torch.where(
-            x < a / 3, 1.5 / a * x, self.s((x + (a / 3)) / ((4 / 3) * a))
-        )
+        sign = x < a / 3
+        result = torch.zeros_like(x)
+        result[sign] = 1.5 / a * x[sign]
+        result[~sign] = self.s((x[~sign] + (a / 3)) / ((4 / 3) * a))
+        return result
 
     def g(self, x: torch.Tensor, epsilons: torch.Tensor) -> torch.Tensor:
         """boundary constrain"""
-        return self.g_a(x, epsilons[:, 0]) + self.g_a(1 - x, epsilons[:, 2]) - 1
+        return self.g_a(x, epsilons[0]) + self.g_a(1 - x, epsilons[2]) - 1
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass"""
-        weights = self.activation(self.layer.weight)
+        weights = torch.softmax(self.epsilons, dim=-1)
 
         return self.g(x, weights)
 
@@ -103,7 +104,7 @@ class FeedForwardNeuralNetwork(torch.nn.Module):
         else:
             self._boundary_condition_modifier = boundary_condition_modifier
 
-        self._neural_network = self.build_network(
+        self.neural_network = self.build_network(
             input_dimension,
             output_dimension,
             nb_hidden_layers,
@@ -144,12 +145,9 @@ class FeedForwardNeuralNetwork(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through the network."""
-        return self._neural_network(x) * self._boundary_condition_modifier(x)
+        return self.neural_network(x) * self._boundary_condition_modifier(x)
 
-    # @torch.jit.export
-    def value_and_gradient(
-        self, inputs: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def value_and_gradient(self, inputs: torch.Tensor) -> Optional[torch.Tensor]:
         """Compute the gradient of the neural network with respect to its inputs."""
         inputs.requires_grad_(True)
         output = self.forward(inputs)
@@ -164,14 +162,9 @@ class FeedForwardNeuralNetwork(torch.nn.Module):
             create_graph=True,
         )[0]
 
-        assert gradients is not None
+        return gradients
 
-        return output, gradients
-
-    # @torch.jit.export
-    def value_and_laplacian(
-        self, inputs: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def value_and_laplacian(self, inputs: torch.Tensor) -> torch.Tensor:
         """Compute the laplacian of the neural network with respect to its inputs."""
         inputs.requires_grad_(True)
         output = self.forward(inputs)
@@ -206,4 +199,4 @@ class FeedForwardNeuralNetwork(torch.nn.Module):
             assert grad2 is not None
             laplacian += grad2[..., i : i + 1]
 
-        return output, gradients, laplacian
+        return laplacian

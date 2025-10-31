@@ -8,18 +8,12 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import matplotlib.pyplot as plt
 import torch
 from tqdm import tqdm
-
-from src import C0BoundaryModel, C2BoundaryModel
-from src import FeedForwardNeuralNetwork as FNN
-from src import Integration
-
-torch.autograd.set_detect_anomaly(True)
-torch.set_default_dtype(torch.float64)
+from models import C0BoundaryModel
+from integration import Integration
 
 ## ---- BOUNDARY CONDITION ---- ##
 
-# NN = C0BoundaryModel()
-NN = C2BoundaryModel()
+NN = C0BoundaryModel()
 
 optimizer = torch.optim.Adam(NN.parameters(), lr=1e-1)
 
