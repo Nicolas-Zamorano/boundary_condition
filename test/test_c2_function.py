@@ -63,8 +63,8 @@ a_values = [0.33, 0.5, 0.75]
 fig_2, ax_2 = plt.subplots()
 
 for a_value in a_values:
-    g_value = g_a(plot_points, a_value)
-    ax_2.plot(plot_points, g_value, label=f"a={a_value}")
+    g_value = g_a(plot_points, a_value).numpy(force=True)
+    ax_2.plot(plot_points.numpy(force=True), g_value, label=f"a={a_value}")
 
 ax_2.legend()
 
@@ -76,13 +76,19 @@ fig, ax = plt.subplots()
 
 line_styles = ["-", "--", "-.", ":"]
 
-scaling = [1, 2, 3, 4]
 
 for e in zip(e_0, e_1, e_2):
+    fig, ax = plt.subplots()
 
     values = scaling.pop(0) * g(plot_points, e)
+    values = (g(plot_points, e)).numpy(force=True)
 
-    ax.plot(plot_points, values, label=f"{np.round(e,2)}", linestyle=line_styles.pop(0))
+    ax.plot(
+        plot_points.numpy(force=True),
+        values,
+        label=f"{np.round(e,2)}",
+    )
 
-ax.legend()
+    ax.legend()
+
 plt.show()

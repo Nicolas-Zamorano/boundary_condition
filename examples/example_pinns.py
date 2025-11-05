@@ -1,13 +1,11 @@
 """Example of approximating the boundary condition of a function using a NN."""
 
-from typing import Tuple
 import matplotlib.pyplot as plt
 import torch
 from tqdm import tqdm
-from ..src import C2BoundaryModel, FeedForwardNeuralNetwork as FNN, Integration
+from integration import Integration
+from models import C2BoundaryModel, FeedForwardNeuralNetwork as FNN
 
-
-torch.autograd.set_detect_anomaly(True)
 torch.set_default_dtype(torch.float64)
 
 ### ---- BOUNDARY CONDITION ---- ###
@@ -21,49 +19,29 @@ class BoundaryLayer(torch.nn.Module):
         return inputs * (1 - inputs)
 
 
-boundary_NN = C2BoundaryModel()
+boundary_constrain = C2BoundaryModel()
 
-boundary_layer = BoundaryLayer()
+# boundary_constrain = BoundaryLayer()
 
 ### ---- NEURAL_NETWORK ---- ###
 
-NB_HIDDEN_LAYERS = 3
-NEURONS_PER_LAYERS = 10
-LEARNING_RATE = 1e-3
-
-NN_boundary_layer = FNN(
+NN = FNN(
     input_dimension=1,
     output_dimension=1,
-    nb_hidden_layers=NB_HIDDEN_LAYERS,
-    neurons_per_layers=NEURONS_PER_LAYERS,
+    nb_hidden_layers=3,
+    neurons_per_layers=10,
     activation_function=torch.nn.Tanh(),
     use_xavier_initialization=True,
-    boundary_condition_modifier=boundary_layer,
+    boundary_condition_modifier=boundary_constrain,
 )
 
-NN_boundary_NN = FNN(
-    input_dimension=1,
-    output_dimension=1,
-    nb_hidden_layers=NB_HIDDEN_LAYERS,
-    neurons_per_layers=NEURONS_PER_LAYERS,
-    activation_function=torch.nn.Tanh(),
-    use_xavier_initialization=True,
-    boundary_condition_modifier=boundary_NN,
-)
+optimizer = torch.optim.Adam(NN.parameters(), lr=1e-3)
 
-optimizer_boundary_layer = torch.optim.Adam(
-    NN_boundary_layer.parameters(), lr=LEARNING_RATE
-)
-
-optimizer_boundary_NN = torch.optim.Adam(
-    (list(NN_boundary_NN.parameters()) + list(boundary_NN.parameters())),
-    lr=LEARNING_RATE,
-)
 
 ### ---- LOSS PARAMETERS ---- ####
 
 EPSILON = 1e-2
-SCALING_FACTOR = 1.1
+SCALING_FACTOR = 1
 
 
 def exact(x: torch.Tensor) -> torch.Tensor:
@@ -98,38 +76,62 @@ def h1_norm(_, value: torch.Tensor, value_dx: torch.Tensor) -> torch.Tensor:
 
 
 integral_rule = Integration(
-    intervals_start=0, interval_end=1, nb_intervals=100, integration_order=2
+    intervals_start=0, interval_end=1, nb_intervals=70, integration_order=4
+)
+
+integral_rule_test = Integration(
+    intervals_start=0, interval_end=1, nb_intervals=200, integration_order=8
+)
+
+integral_rule_validation = Integration(
+    intervals_start=0, interval_end=1, nb_intervals=30, integration_order=4
 )
 
 rhs_value = rhs(integral_rule.integration_points)
-exact_value = exact(integral_rule.integration_points)
-exact_dx_value = exact_dx(integral_rule.integration_points)
+exact_value = exact(integral_rule_validation.integration_points)
+exact_dx_value = exact_dx(integral_rule_validation.integration_points)
 exact_norm = torch.sum(
-    torch.sqrt(integral_rule.integrate(h1_norm, exact_value, exact_dx_value))
+    torch.sqrt(integral_rule_validation.integrate(h1_norm, exact_value, exact_dx_value))
 )
 
 ### ---- TRAINING PARAMETERS ---- ####
 
+EPOCHS = 10000
 
-def training_step(
-    neural_network: FNN, optimizer: torch.optim.Optimizer
-) -> Tuple[float, float]:
-    """Single training step."""
+training_bar = tqdm(range(EPOCHS))
+
+history_loss = []
+history_h1_norm = []
+
+best_loss = float("inf")
+MIN_DELTA = 1e-16
+EARLY_STOPPING_PATIENCE = 200
+EARLY_STOPPING_COUNTER = 0
+optimal_parameters = NN.state_dict()
+
+### ---- TRAINING PHASE ---- ####
+
+for _ in training_bar:
+
     optimizer.zero_grad()
 
-    nn_evaluation, nn_gradient, nn_laplacian = neural_network.value_and_laplacian(
+    nn_evaluation, nn_gradient, nn_laplacian = NN.value_and_laplacian(
         integral_rule.integration_points
     )
 
     loss = torch.sum(integral_rule.integrate(loss_function, nn_laplacian, rhs_value))
 
+    nn_evaluation_validation, nn_gradient_validation = NN.value_and_gradient(
+        integral_rule_validation.integration_points
+    )
+
     error_h1 = (
         torch.sqrt(
             torch.sum(
-                integral_rule.integrate(
+                integral_rule_validation.integrate(
                     h1_norm,
-                    exact_value - nn_evaluation,
-                    exact_dx_value - nn_gradient,
+                    exact_value - nn_evaluation_validation,
+                    exact_dx_value - nn_gradient_validation,
                 )
             )
         )
@@ -139,182 +141,111 @@ def training_step(
     loss.backward()
     optimizer.step()
 
-    return loss.item(), error_h1.item()
+    loss_value_float = loss.item()
+    error_h1_float = error_h1.item()
 
-
-EPOCHS = 10000
-
-training_bar = tqdm(range(EPOCHS))
-
-history_loss_boundary_layer = []
-history_loss_boundary_NN = []
-history_h1_norm_boundary_layer = []
-history_h1_norm_boundary_NN = []
-boundary_weights_history = []
-grads_boundary_weights_history = []
-
-### ---- TRAINING PHASE ---- ####
-
-for _ in training_bar:
-
-    loss_boundary_layer, h1_norm_boundary_layer = training_step(
-        NN_boundary_layer, optimizer_boundary_layer
-    )
-
-    loss_boundary_NN, h1_norm_boundary_NN = training_step(
-        NN_boundary_NN, optimizer_boundary_NN
-    )
-
-    boundary_weights_history.append(boundary_NN.epsilons.data)
-    grads_boundary_weights_history.append(boundary_NN.epsilons.grad)
-    history_loss_boundary_layer.append(loss_boundary_layer)
-    history_h1_norm_boundary_layer.append(h1_norm_boundary_layer)
-    history_loss_boundary_NN.append(loss_boundary_NN)
-    history_h1_norm_boundary_NN.append(h1_norm_boundary_NN)
+    history_loss.append(loss_value_float)
+    history_h1_norm.append(error_h1_float)
 
     training_bar.set_postfix(
         {
-            "Loss Layer": f"{loss_boundary_layer:.4e}",
-            "H1 Layer": f"{h1_norm_boundary_layer:.4e}",
-            "Loss NN": f"{loss_boundary_NN:.4e}",
-            "H1 NN": f"{h1_norm_boundary_NN:.4e}",
+            "Loss": f"{loss_value_float:.8e}",
+            "H1 Error": f"{error_h1_float:.8e}",
         }
     )
 
+    if loss_value_float < best_loss - MIN_DELTA:
+        best_loss = loss_value_float
+        EARLY_STOPPING_COUNTER = 0
+        optimal_parameters = NN.state_dict()
+    else:
+        EARLY_STOPPING_COUNTER += 1
+        if EARLY_STOPPING_COUNTER >= EARLY_STOPPING_PATIENCE:
+            break
+
 ### ---- PLOTTING ---- ####
 
-plot_points = torch.linspace(0, 1, 1000).unsqueeze(1)
-plot_points_np = plot_points.numpy(force=True)
+NN.load_state_dict(optimal_parameters)
 
-fig, axes = plt.subplots(2, 4, figsize=(20, 8))
+exact_value_test = exact(integral_rule_test.integration_points)
+exact_dx_value_test = exact_dx(integral_rule_test.integration_points)
+
+nn_evaluation_test, nn_gradient_test = NN.value_and_gradient(
+    integral_rule_test.integration_points
+)
+
+h1_norm_test = torch.sqrt(
+    torch.sum(
+        integral_rule_test.integrate(
+            h1_norm,
+            exact_value_test - nn_evaluation_test,
+            exact_dx_value_test - nn_gradient_test,
+        )
+    )
+) / torch.sqrt(
+    torch.sum(
+        integral_rule_test.integrate(h1_norm, exact_value_test, exact_dx_value_test)
+    )
+)
+
+print(f"H1 Norm on test points: {h1_norm_test.item():.4e}")
+
+plot_points = integral_rule_test.integration_points.reshape(-1, 1)
+plot_points_np = plot_points.numpy(force=True)
 
 solution_evaluation = exact(plot_points).numpy(force=True)
 
 ### --- BOUNDARY LAYER PLOT --- ###
 
-boundary_layer_evaluation = boundary_layer(plot_points).numpy(force=True)
-NN_boundary_layer_evaluation = NN_boundary_layer.neural_network(plot_points).numpy(
-    force=True
-)
+boundary_layer_evaluation = boundary_constrain(plot_points).numpy(force=True)
+NN_boundary_layer_evaluation = NN.neural_network(plot_points).numpy(force=True)
 
-axes[0, 0].plot(plot_points_np, solution_evaluation, label="Exact solution")
+fig_boundary, ax_boundary = plt.subplots()
 
-axes[0, 0].plot(
+ax_boundary.plot(plot_points_np, solution_evaluation, label="Exact solution")
+ax_boundary.plot(
     plot_points_np,
     boundary_layer_evaluation,
     label="Boundary Constraint",
     linestyle="--",
 )
 
-axes[0, 0].legend()
+ax_boundary.legend()
 
-axes[0, 1].plot(plot_points_np, solution_evaluation, label="Exact solution")
+fig_only_nn, ax_only_nn = plt.subplots()
 
-axes[0, 1].plot(
+ax_only_nn.plot(plot_points_np, solution_evaluation, label="Exact solution")
+
+ax_only_nn.plot(
     plot_points_np,
     NN_boundary_layer_evaluation,
     label="Neural Network",
     linestyle="--",
 )
-axes[0, 1].legend()
+ax_only_nn.legend()
 
-axes[0, 2].plot(plot_points_np, solution_evaluation, label="Exact solution")
+fig_sol, ax_sol = plt.subplots()
 
-axes[0, 2].plot(
+ax_sol.plot(plot_points_np, solution_evaluation, label="Exact solution")
+
+ax_sol.plot(
     plot_points_np,
     NN_boundary_layer_evaluation * boundary_layer_evaluation,
     label="NN * Boundary Constraint",
     linestyle="--",
 )
-axes[0, 2].legend()
+ax_sol.legend()
 
-axes[0, 3].semilogy(history_loss_boundary_NN, label=r"$\mathcal{L}(u_\theta)$")
+fig_loss, ax_loss = plt.subplots()
 
-axes[0, 3].semilogy(
-    history_h1_norm_boundary_layer,
+ax_loss.semilogy(history_loss, label=r"$\mathcal{L}_h(u_\theta)$")
+
+ax_loss.semilogy(
+    history_h1_norm,
     label=r"$\frac{\|u - u_\theta\|_{H^1}}{\|u\|_{H^1}}$",
 )
-axes[0, 3].legend()
-axes[0, 3].set_xlabel("# Epochs")
-axes[0, 3].set_ylabel("Values")
-axes[0, 3].set_title("Training History")
+ax_loss.legend()
+ax_loss.set_xlabel("# Epochs")
+ax_loss.set_ylabel("Values")
 
-### --- BOUNDARY NN PLOT --- ###
-
-boundary_NN_evaluation = boundary_NN(plot_points).numpy(force=True)
-NN_boundary_NN_evaluation = NN_boundary_NN.neural_network(plot_points).numpy(force=True)
-
-axes[1, 0].plot(plot_points_np, solution_evaluation, label="Exact solution")
-
-axes[1, 0].plot(
-    plot_points_np,
-    boundary_NN_evaluation,
-    label="Boundary Constraint",
-    linestyle="--",
-)
-axes[1, 0].legend()
-
-axes[1, 1].plot(plot_points_np, solution_evaluation, label="Exact solution")
-
-axes[1, 1].plot(
-    plot_points_np, NN_boundary_NN_evaluation, label="Neural Network", linestyle="--"
-)
-axes[1, 1].legend()
-
-axes[1, 2].plot(plot_points_np, solution_evaluation, label="Exact solution")
-
-axes[1, 2].plot(
-    plot_points_np,
-    NN_boundary_NN_evaluation * boundary_NN_evaluation,
-    label="NN * Boundary Constraint",
-    linestyle="--",
-)
-axes[1, 2].legend()
-
-axes[1, 3].semilogy(history_loss_boundary_NN, label=r"$\mathcal{L}(u_\theta)$")
-axes[1, 3].semilogy(
-    history_h1_norm_boundary_NN,
-    label=r"$\frac{\|u - u_\theta\|_{H^1}}{\|u\|_{H^1}}$",
-)
-
-fig.text(
-    0.5, 0.9, "Non-Trainable Boundary Layer", ha="center", va="center", fontsize=14
-)
-
-fig.text(0.5, 0.48, "Trainable Boundary Layer", ha="center", va="center", fontsize=14)
-
-#### --- Boundary Layer VALUES PLOT --- ###
-
-weights_array = torch.stack(boundary_weights_history, dim=0).numpy()
-grads_array = torch.stack(grads_boundary_weights_history, dim=0).numpy()
-
-iterations = range(weights_array.shape[0])
-
-line_styles = ["--", "-.", ":"]
-
-fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-
-for i in range(weights_array.shape[1]):
-    axes[0].plot(
-        iterations,
-        weights_array[:, i],
-        label=rf"$w_{i}$",
-        linestyle=line_styles[i % len(line_styles)],
-    )
-    axes[1].plot(
-        iterations,
-        grads_array[:, i],
-        label=rf"$\nabla_\theta w_{i}$",
-        linestyle=line_styles[i % len(line_styles)],
-    )
-
-axes[0].set_title("Boundary NN weights evolution")
-axes[0].set_xlabel("# Epochs")
-axes[0].set_ylabel("Weight value")
-axes[0].legend()
-axes[1].set_title("Boundary NN weights gradients evolution")
-axes[1].set_xlabel("# Epochs")
-axes[1].set_ylabel("Gradient value")
-axes[1].legend()
-fig.suptitle("Boundary NN parameters evolution")
 plt.show()
